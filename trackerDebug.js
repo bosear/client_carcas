@@ -4,17 +4,23 @@ var crypto = require('crypto');
 var url = require('url');
 var http = require('http');
 var net = require('net');
-
 var peers = [];
+
+//var path = "Cuphead [L] [ENG ENG] (2017) (20170929) [GOG] [rutracker-5459668].torrent";
 var path = "kali-linux-2017.2-amd64.torrent";
 var torrent = bencode.decode(fs.readFileSync(path));
-var first = true;
 
 fs.writeFileSync('torrent.txt', JSON.stringify(torrent));
 console.log("1. Torrent info saved in torrent.txt");
 
 var info_hash = crypto.createHash('sha1').update(bencode.encode(torrent.info)).digest();
+
+
 var protocol = "BitTorrent protocol";
+
+//info_hash === Buffer.from(info_hash.toString('hex'), 'hex')
+
+
 var pieces = [];
 var id = null; // peer id
 var lenghth = 0;
@@ -63,6 +69,8 @@ var options = {
 };
 
 http.get(options, function (res) {
+    console.log('got response: ' + res.statusCode);
+
     var response = [];
 
     res.on('data', function (chunk) {
@@ -83,15 +91,24 @@ http.get(options, function (res) {
         fs.writeFileSync('handshake.txt', handshake.toString());
         console.log("4. Start message saved in handshake.txt");
 
+        var count = 0;
+        console.log('number sockets: ' + peers.length);
+
         peers.forEach(peer => {
             var socket = new net.Socket();
             var hand = true;
             var chunks = [];
             socket.connect(peer.port, peer.ip, function () {
-                socket.write(handshake);
+                console.log('Connected + ' + ++count);
+
+                socket.write(handshake, () => {
+                    console.log('Handshake sent');
+                });
+
             });
 
             socket.on('error', function (err) {
+                socket.end();
                 socket.destroy();
             });
 
@@ -102,19 +119,20 @@ http.get(options, function (res) {
             socket.on('end', () => {
                 var bitfieldLen = null;
                 var responsePeer = Buffer.concat(chunks);
+                console.log("Received: " + responsePeer.toString('hex'));
                 var elem = Buffer.concat(chunks)[71];
                 if (responsePeer.length > 71) {
                     bitfieldLen = responsePeer[70] << 8 | responsePeer[71];
+                    console.log('Bitfield length: ' + bitfieldLen);
 
                     var bitfield = '';
                     for (var i = 73; i < responsePeer.length && (72 + bitfieldLen); i++)
                         bitfield += '0x' + responsePeer[i].toString(16).toUpperCase() + ' ';
 
-                    if (first) {
-                        fs.writeFileSync('bitfield.txt', bitfield);
-                        console.log("5. Bitfield in \'hex\' saved in bitfield.txt");
-                        first = false;
-                    }
+                    console.log("Final bitfield: " + bitfield);
+
+                    fs.writeFileSync('bitfield.txt', bitfield);
+                    console.log("5. Bitfield in \'hex\' saved in bitfield.txt");
                 }
             });
         });
